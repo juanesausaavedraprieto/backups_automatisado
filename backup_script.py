@@ -2,7 +2,7 @@ import os
 import subprocess
 import logging
 import time
-import sys # <-- NUEVA LIBRERÍA PARA LEER ARGUMENTOS
+import sys 
 from datetime import datetime
 from cryptography.fernet import Fernet
 
@@ -63,13 +63,10 @@ def limpiar_backups_antiguos(dias_retencion=7):
 # 4. MOTOR PRINCIPAL CON SOPORTE GRANULAR
 # ==========================================
 def realizar_backup():
-    # Leemos si Node.js nos envió tablas específicas
-    # sys.argv[0] es el nombre del script, los argumentos reales empiezan en sys.argv[1]
     tablas_seleccionadas = sys.argv[1:] 
     
     fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # Cambiamos el nombre del archivo si es un backup parcial
     if tablas_seleccionadas:
         backup_filename = f"backup_{DB_NAME}_parcial_{fecha_actual}.backup"
     else:
@@ -77,7 +74,6 @@ def realizar_backup():
         
     backup_path = os.path.join(BACKUP_DIR, backup_filename)
 
-    # Construimos el comando dinámicamente
     comando = [
         "pg_dump", "-U", DB_USER, "-h", DB_HOST, "-p", DB_PORT,
         "-F", "c", "-v"
@@ -92,7 +88,6 @@ def realizar_backup():
     else:
         print("[*] MODO COMPLETO: Se extraerá toda la base de datos.")
 
-    # Al final agregamos el archivo de salida y el nombre de la BD
     comando.extend(["-f", backup_path, DB_NAME])
 
     try:

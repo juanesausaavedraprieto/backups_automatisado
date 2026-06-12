@@ -2,7 +2,7 @@ import os
 import subprocess
 import logging
 import glob
-import sys # <-- NUEVA LIBRERÍA PARA MANEJO DE ERRORES
+import sys 
 from cryptography.fernet import Fernet
 
 # ==========================================
@@ -62,8 +62,6 @@ def realizar_restauracion():
 
     print(f"[*] Archivo descifrado con éxito. Inyectando en '{DB_NAME}'...")
 
-    # --- LA SOLUCIÓN ESTÁ AQUÍ ---
-    # Agregamos "-c" (limpiar esquema) y "--if-exists" (no dar error si la tabla no existe)
     comando = [
         "pg_restore", "-U", DB_USER, "-h", DB_HOST, "-p", DB_PORT,
         "-d", DB_NAME, "-1", "-c", "--if-exists", archivo_temporal
@@ -79,7 +77,7 @@ def realizar_restauracion():
         
     except subprocess.CalledProcessError as e:
         print(f"[-] Error Crítico al restaurar: {e.stderr.strip()}")
-        sys.exit(1) # <-- Le dice a Node.js que el proceso falló (Código 1)
+        sys.exit(1)
         
     finally:
         if os.path.exists(archivo_temporal):

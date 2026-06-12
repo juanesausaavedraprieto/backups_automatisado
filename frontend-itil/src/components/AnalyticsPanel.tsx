@@ -6,7 +6,6 @@ interface Props {
 }
 
 const AnalyticsPanel: React.FC<Props> = ({ historico }) => {
-    // Datos base por defecto en caso de que el histórico esté vacío al iniciar
     const datos = historico.length > 0 ? historico : [
         { fecha: 'Resp. 1', peso: 0.1, tiempo: 0.5 },
         { fecha: 'Resp. 2', peso: 0.2, tiempo: 0.8 },
