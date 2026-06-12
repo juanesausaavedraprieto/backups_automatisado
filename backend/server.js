@@ -7,12 +7,12 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const cron = require('node-cron');
-const bcrypt = require('bcrypt');     
-const jwt = require('jsonwebtoken');   
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 app.use(cors());
-app.use(express.json()); 
+app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
@@ -35,6 +35,59 @@ const poolData = new Pool({
     password: 'juanitosp', port: 5432,
 });
 
+// ==========================================
+// 1.5. FUNCIÓN CENTRALIZADA DE AUDITORÍA
+// ==========================================
+// Función centralizada para el registro inmutable de acciones
+const registrarAuditoria = async (email, evento, descripcion, estado, ip = '127.0.0.1') => {
+    try {
+        const query = `
+            INSERT INTO auditoria_eventos (usuario_email, evento, descripcion, estado, ip_cliente)
+            VALUES ($1, $2, $3, $4, $5);
+        `;
+        await poolAuth.query(query, [email, evento, descripcion, estado, ip]);
+    } catch (error) {
+        console.error('[-] Error crítico al escribir en el log de auditoría:', error.message);
+    }
+};
+
+const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1515025468892385545/0gUaWmVxl_bRy9FpEOJKSNFWSZIe_fIGzhiVOWm_gm1bZJMzsqP_Sa0XrXSjBn-ihIa_';
+
+const enviarAlertaDiscord = async (evento, origen, operador, exito, detalles) => {
+    if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL.includes('TU_WEBHOOK_AQUI')) return;
+
+    // Colores: Verde para éxito (5763719), Rojo para error (15548997)
+    const colorNotificacion = exito ? 5763719 : 15548997;
+    const iconoEstado = exito ? '✅' : '🚨';
+
+    const payload = {
+        username: "Console TI - Alertas",
+        avatar_url: "https://cdn-icons-png.flaticon.com/512/2115/2115916.png", // Un ícono de servidor
+        embeds: [{
+            title: `${iconoEstado} Notificación de Infraestructura ITIL`,
+            color: colorNotificacion,
+            fields: [
+                { name: "Operación", value: evento, inline: true },
+                { name: "Estado", value: exito ? "Completado con Éxito" : "Fallo Crítico", inline: true },
+                { name: "Operador/Origen", value: operador, inline: true },
+                { name: "Tipo de Lanzamiento", value: origen, inline: true },
+                { name: "Detalles del Sistema", value: `\`\`\`${detalles}\`\`\``, inline: false }
+            ],
+            footer: { text: "Sistema de Continuidad de Negocio | PostgreSQL" },
+            timestamp: new Date().toISOString()
+        }]
+    };
+
+    try {
+        await fetch(DISCORD_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    } catch (error) {
+        console.error('[-] Error al disparar el Webhook de Discord:', error.message);
+    }
+};
 // ==========================================
 // 2. ENDPOINTS API REST (AUTENTICACIÓN)
 // ==========================================
@@ -66,12 +119,14 @@ app.post('/api/auth/register', async (req, res) => {
     }
 });
 
-// Login de Usuarios
+// Login Auditado
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
+    const ip = req.ip || req.socket.remoteAddress;
     try {
         const resultado = await poolAuth.query('SELECT * FROM usuarios_admin WHERE email = $1', [email]);
         if (resultado.rows.length === 0) {
+            await registrarAuditoria(email, 'LOGIN', 'Intento de acceso fallido: Usuario no registrado', 'ERROR', ip);
             return res.status(401).json({ error: 'Credenciales inválidas.' });
         }
 
@@ -80,15 +135,14 @@ app.post('/api/auth/login', async (req, res) => {
         // Verificación de Contraseña Hasheada
         const passwordValido = await bcrypt.compare(password, usuario.password_hash);
         if (!passwordValido) {
+            await registrarAuditoria(email, 'LOGIN', 'Intento de acceso fallido: Contraseña incorrecta', 'ERROR', ip);
             return res.status(401).json({ error: 'Credenciales inválidas.' });
         }
 
         // CONTROL DE FLUJO DE ESTADOS (Sala de Espera Corporativa)
-        if (usuario.estado === 'PENDIENTE') {
-            return res.status(403).json({ status_error: 'PENDIENTE', error: 'Tu solicitud de acceso se encuentra en proceso de revisión.' });
-        }
-        if (usuario.estado === 'RECHAZADO') {
-            return res.status(403).json({ status_error: 'RECHAZADO', error: 'El administrador ha rechazado tu solicitud de acceso al sistema.' });
+        if (usuario.estado === 'PENDIENTE' || usuario.estado === 'RECHAZADO') {
+            await registrarAuditoria(email, 'LOGIN', `Acceso bloqueado: Cuenta en estado ${usuario.estado}`, 'ERROR', ip);
+            return res.status(403).json({ status_error: usuario.estado, error: 'Acceso no autorizado por políticas de IAM.' });
         }
 
         // Si está APROBADO, fabricamos su pase de acceso JWT
@@ -98,6 +152,7 @@ app.post('/api/auth/login', async (req, res) => {
             { expiresIn: '8h' } // Expira en 8 horas por seguridad de turno laboral
         );
 
+        await registrarAuditoria(email, 'LOGIN', 'Inicio de sesión exitoso. Token JWT emitido.', 'EXITO', ip);
         res.json({ token, usuario: { email: usuario.email, rol: usuario.rol } });
     } catch (error) {
         console.error(error);
@@ -111,7 +166,6 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Middleware Guardián: Verifica el Token y el Rol de SUPER_ADMIN
 const verificarSuperAdmin = (req, res, next) => {
-    // El token llega en la cabecera: "Bearer eyJhbGci..."
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Acceso denegado. No hay pase de seguridad.' });
@@ -134,7 +188,7 @@ const verificarSuperAdmin = (req, res, next) => {
     }
 };
 
-// ENDPOINT 1: Leer todos los operadores (Solo lectura, sin contraseñas)
+// ENDPOINT: Leer todos los operadores (Solo lectura, sin contraseñas)
 app.get('/api/admin/usuarios', verificarSuperAdmin, async (req, res) => {
     try {
         // Excluimos deliberadamente el password_hash por seguridad
@@ -151,10 +205,22 @@ app.get('/api/admin/usuarios', verificarSuperAdmin, async (req, res) => {
     }
 });
 
-// ENDPOINT 2: Modificar el estado y rol de un operador
+// ENDPOINT: Obtener historial completo de auditoría inmutable
+app.get('/api/admin/auditoria', verificarSuperAdmin, async (req, res) => {
+    try {
+        const query = `SELECT id, usuario_email, evento, descripcion, estado, ip_cliente, fecha FROM auditoria_eventos ORDER BY fecha DESC;`;
+        const { rows } = await poolAuth.query(query);
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: 'Error al consultar logs de auditoría.' });
+    }
+});
+
+// Modificación de Políticas de IAM Auditada
 app.put('/api/admin/usuarios/:id', verificarSuperAdmin, async (req, res) => {
     const idUsuarioDestino = req.params.id;
     const { estado, rol } = req.body;
+    const ip = req.ip || req.socket.remoteAddress;
 
     // Validación de seguridad básica para no auto-degradarse por error
     if (req.usuario.id === idUsuarioDestino && estado !== 'APROBADO') {
@@ -162,20 +228,30 @@ app.put('/api/admin/usuarios/:id', verificarSuperAdmin, async (req, res) => {
     }
 
     try {
+        // Consultamos el correo del afectado para guardarlo en la descripción de la auditoría
+        const afectado = await poolAuth.query('SELECT email FROM usuarios_admin WHERE id = $1', [idUsuarioDestino]);
+        const emailAfectado = afectado.rows[0]?.email || 'Desconocido';
+
         await poolAuth.query(
             'UPDATE usuarios_admin SET estado = $1, rol = $2 WHERE id = $3',
             [estado, rol, idUsuarioDestino]
         );
 
-        // Opcional: Podríamos usar io.emit aquí para expulsar al usuario en tiempo real si fue RECHAZADO, 
-        // pero por ahora actualizar la BD es suficiente.
+        await registrarAuditoria(
+            req.usuario.email,
+            'IAM_MODIFICACION',
+            `Modificación de derechos sobre el usuario [${emailAfectado}]. Nuevo Estado: ${estado}, Nuevo Rol: ${rol}`,
+            'EXITO',
+            ip
+        );
 
         res.json({ mensaje: 'Políticas de acceso actualizadas correctamente.' });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: 'Error al aplicar las nuevas políticas de seguridad.' });
+        res.status(500).json({ error: 'Error al aplicar políticas de seguridad.' });
     }
 });
+
 // ==========================================
 // 3. MIDDLEWARE DE PROTECCIÓN PARA SOCKET.IO
 // ==========================================
@@ -194,14 +270,14 @@ io.use((socket, next) => {
     }
 });
 
-
 // ==========================================
 // 4. MOTOR DE EJECUCIÓN PYTHON (RESPALDOS)
 // ==========================================
 let tareaCronActiva = null;
 let configuracionCron = { activo: false, frecuencia: '0 0 * * *', etiqueta: 'Diario (00:00)' };
 
-const ejecutarScriptPython = (ruta, origen = 'Manual', argumentosExtra = []) => {
+// Modifica la función ejecutarScriptPython para recibir el correo del operador
+const ejecutarScriptPython = (ruta, origen = 'Manual', argumentosExtra = [], emailOperador = 'Sistema') => {
     console.log(`🚀 Iniciando proceso (${origen})...`);
     io.emit('terminal_stream', `\n[*] INICIANDO PROTOCOLO DESDE ORIGEN: ${origen}`);
 
@@ -212,8 +288,22 @@ const ejecutarScriptPython = (ruta, origen = 'Manual', argumentosExtra = []) => 
     proceso.stdout.on('data', (data) => io.emit('terminal_stream', data.toString()));
     proceso.stderr.on('data', (data) => io.emit('terminal_stream', data.toString()));
 
-    proceso.on('close', (code) => {
-        io.emit('backup_completado', { exito: code === 0, mensaje: `Proceso (${origen}) finalizado con código ${code}.` });
+    proceso.on('close', async (code) => {
+        const exito = code === 0;
+        const tipoEvento = ruta.includes('backup') ? 'BACKUP' : 'RESTAURACION';
+        const mensajeDetalle = `Proceso finalizado con código de salida ${code}.`;
+        await registrarAuditoria(
+            emailOperador,
+            tipoEvento,
+            `Ejecución de script [${tipoEvento}]. Origen de la llamada: ${origen}. ${mensajeDetalle}`,
+            exito ? 'EXITO' : 'ERROR'
+        );
+
+        // 2. NUEVO: ALERTA EXTERNA VÍA DISCORD
+        await enviarAlertaDiscord(tipoEvento, origen, emailOperador, exito, mensajeDetalle);
+
+        // 3. ACTUALIZACIÓN DEL FRONTEND REACT
+        io.emit('backup_completado', { exito, mensaje: `Proceso (${origen}) finalizado con código ${code}.` });
         io.emit('actualizar_metricas');
     });
 };
@@ -239,32 +329,50 @@ io.on('connection', (socket) => {
         const rutaBackups = 'C:\\Users\\JUAN ESAU SAAVEDRA P\\OneDrive - Universidad Tecnologica del Peru\\doc\\MIS_PROYECTOS\\Gestion-TI\\backups';
         try {
             if (!fs.existsSync(rutaBackups)) { socket.emit('historial_archivos', []); return; }
+
             const archivos = fs.readdirSync(rutaBackups)
                 .filter(file => file.endsWith('.enc'))
                 .map(file => {
-                    const stats = fs.statSync(path.join(rutaBackups, file));
-                    return { nombre: file, pesoMB: (stats.size / (1024 * 1024)).toFixed(2), fechaMs: stats.mtimeMs };
+                    const rtuatCompleta = path.join(rutaBackups, file);
+                    const stats = fs.statSync(rtuatCompleta);
+
+                    // === NUEVO: LEER EL COMPAÑERO SHA-256 ===
+                    const rutaSha = rtuatCompleta + '.sha256';
+                    let checksum = 'Firma no encontrada';
+                    if (fs.existsSync(rutaSha)) {
+                        checksum = fs.readFileSync(rutaSha, 'utf8').trim();
+                    }
+
+                    return {
+                        nombre: file,
+                        pesoMB: (stats.size / (1024 * 1024)).toFixed(2),
+                        fechaMs: stats.mtimeMs,
+                        checksum: checksum 
+                    };
                 }).sort((a, b) => b.fechaMs - a.fechaMs);
             socket.emit('historial_archivos', archivos);
         } catch (error) { console.error(error); }
     });
 
-    // Despacho de Respaldos Manuales
+    // Despacho de Respaldos Manuales con Auditoría
     socket.on('iniciar_backup', (tablasSeleccionadas = []) => {
-        const origen = tablasSeleccionadas.length > 0 ? `Manual_Granular_[${socket.usuario.email}]` : `Manual_Completo_[${socket.usuario.email}]`;
+        const origen = tablasSeleccionadas.length > 0 ? 'Manual_Granular' : 'Manual_Completo';
         ejecutarScriptPython(
             'C:\\Users\\JUAN ESAU SAAVEDRA P\\OneDrive - Universidad Tecnologica del Peru\\doc\\MIS_PROYECTOS\\Gestion-TI\\backup_script.py',
             origen,
-            tablasSeleccionadas
+            tablasSeleccionadas,
+            socket.usuario.email // <-- PASAMOS EL OPERADOR AUTENTICADO
         );
     });
 
-    // Despacho de Recuperación de Desastres
+    // Despacho de Recuperación de Desastres con Auditoría
     socket.on('iniciar_restauracion', () => {
         // Bloqueo de seguridad: Solo permitir restaurar si es SUPER_ADMIN o si está explicitado en la política TI
         ejecutarScriptPython(
             'C:\\Users\\JUAN ESAU SAAVEDRA P\\OneDrive - Universidad Tecnologica del Peru\\doc\\MIS_PROYECTOS\\Gestion-TI\\restore_script.py',
-            `Restauración_Crítica_[${socket.usuario.email}]`
+            'Restauración_Crítica',
+            [],
+            socket.usuario.email // <-- PASAMOS EL OPERADOR AUTENTICADO
         );
     });
 
@@ -280,6 +388,7 @@ io.on('connection', (socket) => {
         if (configuracionCron.activo) {
             console.log(`⏱️ Cron activado por ${socket.usuario.email}: ${configuracionCron.frecuencia}`);
             tareaCronActiva = cron.schedule(configuracionCron.frecuencia, () => {
+                // Al ser automático, el sistema lo registra
                 ejecutarScriptPython('C:\\Users\\JUAN ESAU SAAVEDRA P\\OneDrive - Universidad Tecnologica del Peru\\doc\\MIS_PROYECTOS\\Gestion-TI\\backup_script.py', 'Automático_Cron');
             });
         }

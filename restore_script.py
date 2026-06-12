@@ -40,14 +40,41 @@ def obtener_ultimo_backup_cifrado():
 # 3. MOTOR DE RECUPERACIÓN
 # ==========================================
 def realizar_restauracion():
+    import hashlib
     archivo_cifrado = obtener_ultimo_backup_cifrado()
     
     if not archivo_cifrado:
         print("[-] Error: No hay backups cifrados disponibles en la bóveda.")
         sys.exit(1)
 
-    print(f"[*] Iniciando descifrado del archivo: {archivo_cifrado}")
+    ruta_sha256_esperado = archivo_cifrado + ".sha256"
+    if not os.path.exists(ruta_sha256_esperado):
+        print("[-] Error Crítico de Seguridad: El archivo no cuenta con una firma digital SHA-256 válida. Abortando.")
+        sys.exit(1)
+        
+    with open(ruta_sha256_esperado, "r") as file_sha:
+        hash_esperado = file_sha.read().strip()
+        
+    print("[*] Evaluando integridad de la cadena de bloques...")
+    sha256_recalculado = hashlib.sha256()
+    with open(archivo_cifrado, "rb") as file:
+        for byte_block in iter(lambda: file.read(4096), b""):
+            sha256_recalculado.update(byte_block)
+            
+    hash_actual = sha256_recalculado.hexdigest()
     
+    if hash_actual != hash_esperado:
+        print("\n🚨 ALERTA DE SEGURIDAD INTERNA 🚨")
+        print("[-] ERROR DE INTEGRIDAD: La firma digital no coincide.")
+        print(f"    Esperado: {hash_esperado}")
+        print(f"    Actual:   {hash_actual}")
+        print("[-] El archivo ha sido manipulado, dañado o está incompleto. pg_restore bloqueado.")
+        sys.exit(1)
+        
+    print("[+] Sello verificado: Integridad de datos confirmada (Match 100%).")
+    # ========================================================
+
+    print(f"[*] Iniciando descifrado del archivo: {archivo_cifrado}")
     clave = cargar_clave()
     f = Fernet(clave)
     

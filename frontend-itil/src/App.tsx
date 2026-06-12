@@ -12,18 +12,24 @@ import CronPanel from './components/CronPanel';
 import TableSelector from './components/TableSelector';
 import LiveProgress from './components/LiveProgress';
 import Auth from './components/Auth';
-import UserManager from './components/UserManager'; // <-- NUEVO COMPONENTE
+import UserManager from './components/UserManager';
+import AuditTrail from './components/AuditTrail'; // <-- NUEVO COMPONENTE DE AUDITORÍA
 
 const App: React.FC = () => {
   // ==========================================
   // ESTADOS DE AUTENTICACIÓN Y SEGURIDAD
   // ==========================================
   const [token, setToken] = useState<string | null>(localStorage.getItem('itil_token'));
-  const [usuario, setUsuario] = useState<any>(null);
+
+  const [usuario, setUsuario] = useState<any>(() => {
+    const usuarioGuardado = localStorage.getItem('itil_usuario');
+    return usuarioGuardado ? JSON.parse(usuarioGuardado) : null;
+  });
+
   const [socket, setSocket] = useState<Socket | null>(null);
 
-  // Control de Secciones del Layout Lateral (Se añade 'usuarios')
-  const [activeTab, setActiveTab] = useState<'resumen' | 'boveda' | 'analisis' | 'backup' | 'restore' | 'usuarios'>('resumen');
+  // Control de Secciones del Layout Lateral (Se añade 'auditoria')
+  const [activeTab, setActiveTab] = useState<'resumen' | 'boveda' | 'analisis' | 'backup' | 'restore' | 'usuarios' | 'auditoria'>('resumen');
 
   const [logs, setLogs] = useState<string[]>([]);
   const [metricas, setMetricas] = useState<MetricaTabla[]>([]);
@@ -104,12 +110,14 @@ const App: React.FC = () => {
   // ==========================================
   const manejarLoginExitoso = (nuevoToken: string, datosUsuario: any) => {
     localStorage.setItem('itil_token', nuevoToken);
+    localStorage.setItem('itil_usuario', JSON.stringify(datosUsuario)); 
     setToken(nuevoToken);
     setUsuario(datosUsuario);
   };
 
   const cerrarSesion = () => {
     localStorage.removeItem('itil_token');
+    localStorage.removeItem('itil_usuario'); 
     setToken(null);
     setUsuario(null);
     if (socket) socket.disconnect();
@@ -177,14 +185,16 @@ const App: React.FC = () => {
             🚨 Recuperación Crítica
           </button>
 
-          {/* ESTE BOTÓN SOLO ES VISIBLE PARA EL DUEÑO DEL SISTEMA */}
+          {/* CONTROL DE IDENTIDADES Y TRAZABILIDAD AUDITABLE */}
           {usuario?.rol === 'SUPER_ADMIN' && (
-            <button
-              style={activeTab === 'usuarios' ? styles.sideLinkActive : styles.sideLink}
-              onClick={() => setActiveTab('usuarios')}
-            >
-              👥 Gestión de Usuarios
-            </button>
+            <>
+              <button style={activeTab === 'usuarios' ? styles.sideLinkActive : styles.sideLink} onClick={() => setActiveTab('usuarios')}>
+                👥 Gestión de Usuarios
+              </button>
+              <button style={activeTab === 'auditoria' ? styles.sideLinkActive : styles.sideLink} onClick={() => setActiveTab('auditoria')}>
+                📜 Registro de Auditoría
+              </button>
+            </>
           )}
         </nav>
 
@@ -209,6 +219,7 @@ const App: React.FC = () => {
               {activeTab === 'backup' && 'Módulo de Extracción de Activos de Información'}
               {activeTab === 'restore' && 'Plan de Continuidad y Contingencia'}
               {activeTab === 'usuarios' && 'Panel de Auditoría y Control de Identidades'}
+              {activeTab === 'auditoria' && 'Historial de Auditoría de Infraestructura (SLA)'}
             </h1>
             <p style={styles.sectionSub}>PostgreSQL Cluster Instance Node Localhost</p>
           </div>
@@ -284,6 +295,11 @@ const App: React.FC = () => {
           {/* PESTAÑA 6: GESTIÓN DE USUARIOS (FILTRO DE PRIVILEGIOS) */}
           {activeTab === 'usuarios' && usuario?.rol === 'SUPER_ADMIN' && (
             <UserManager token={token!} />
+          )}
+
+          {/* PESTAÑA 7: AUDITORÍA (FILTRO DE PRIVILEGIOS) */}
+          {activeTab === 'auditoria' && usuario?.rol === 'SUPER_ADMIN' && (
+            <AuditTrail token={token!} />
           )}
         </div>
       </div>

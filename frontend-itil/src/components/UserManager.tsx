@@ -56,60 +56,84 @@ const UserManager: React.FC<Props> = ({ token }) => {
             <h3 style={styles.title}>🔐 Gestión de Identidades y Accesos (IAM)</h3>
             {mensaje && <div style={styles.toast}>{mensaje}</div>}
 
-            <table style={styles.table}>
-                <thead>
-                    <tr>
-                        <th style={styles.th}>Operador</th>
-                        <th style={styles.th}>Rol Actual</th>
-                        <th style={styles.th}>Estado de Acceso</th>
-                        <th style={styles.th}>Acciones de Control</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {usuarios.map((u) => (
-                        <tr key={u.id} style={styles.tr}>
-                            <td style={styles.td}>{u.email}</td>
-                            <td style={styles.td}>
-                                <span style={{ ...styles.badge, backgroundColor: u.rol === 'SUPER_ADMIN' ? '#4f46e5' : '#333' }}>
-                                    {u.rol}
-                                </span>
-                            </td>
-                            <td style={styles.td}>
-                                <span style={{ ...styles.status, color: u.estado === 'APROBADO' ? '#4ade80' : u.estado === 'PENDIENTE' ? '#fbbf24' : '#ef4444' }}>
-                                    ● {u.estado}
-                                </span>
-                            </td>
-                            <td style={styles.td}>
-                                <div style={styles.actions}>
-                                    <button onClick={() => actualizarEstado(u.id, 'APROBADO', 'OPERADOR')} style={styles.btnApprove}>APROBAR</button>
-                                    <button onClick={() => actualizarEstado(u.id, 'RESTRINGIDO', 'OPERADOR')} style={styles.btnRestrict}>RESTRINGIR</button>
-                                    <button onClick={() => actualizarEstado(u.id, 'RECHAZADO', 'OPERADOR')} style={styles.btnReject}>RECHAZAR</button>
-                                    <button onClick={() => actualizarEstado(u.id, 'APROBADO', 'SUPER_ADMIN')} style={styles.btnAdmin}>SUBIR A ADMIN</button>
-                                </div>
-                            </td>
+            {/* Contenedor extra para habilitar scroll horizontal si la pantalla es pequeña */}
+            <div style={styles.tableContainer}>
+                <table style={styles.table}>
+                    <thead>
+                        <tr>
+                            <th style={styles.th}>Operador</th>
+                            <th style={styles.th}>Rol Actual</th>
+                            <th style={styles.th}>Estado de Acceso</th>
+                            <th style={styles.th}>Acciones de Control</th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {usuarios.map((u) => (
+                            <tr key={u.id} style={styles.tr}>
+                                <td style={styles.td}>{u.email}</td>
+                                <td style={styles.td}>
+                                    <span style={{ ...styles.badge, backgroundColor: u.rol === 'SUPER_ADMIN' ? '#4f46e5' : '#333' }}>
+                                        {u.rol}
+                                    </span>
+                                </td>
+                                <td style={styles.td}>
+                                    <span style={{ ...styles.status, color: u.estado === 'APROBADO' ? '#4ade80' : u.estado === 'PENDIENTE' ? '#fbbf24' : '#ef4444' }}>
+                                        ● {u.estado}
+                                    </span>
+                                </td>
+                                {/* Aplicamos nowrap para evitar que los botones colapsen en varias líneas */}
+                                <td style={{ ...styles.td, whiteSpace: 'nowrap' }}>
+                                    <div style={styles.actions}>
+                                        <button onClick={() => actualizarEstado(u.id, 'APROBADO', 'OPERADOR')} style={styles.btnApprove}>APROBAR</button>
+                                        <button onClick={() => actualizarEstado(u.id, 'RESTRINGIDO', 'OPERADOR')} style={styles.btnRestrict}>RESTRINGIR</button>
+                                        <button onClick={() => actualizarEstado(u.id, 'RECHAZADO', 'OPERADOR')} style={styles.btnReject}>RECHAZAR</button>
+                                        <button onClick={() => actualizarEstado(u.id, 'APROBADO', 'SUPER_ADMIN')} style={styles.btnAdmin}>SUBIR A ADMIN</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 };
 
 const styles: { [key: string]: React.CSSProperties } = {
-    card: { backgroundColor: '#111', padding: '25px', borderRadius: '10px', border: '1px solid #333' },
+    card: {
+        backgroundColor: '#111',
+        padding: '25px',
+        borderRadius: '10px',
+        border: '1px solid #333',
+        width: '100%',
+        boxSizing: 'border-box'
+    },
     title: { margin: '0 0 20px 0', color: '#f5f5f5', fontSize: '18px' },
     toast: { backgroundColor: 'rgba(74,222,128,0.1)', color: '#4ade80', padding: '10px', borderRadius: '6px', marginBottom: '15px', textAlign: 'center', border: '1px solid #166534' },
-    table: { width: '100%', borderCollapse: 'collapse', textAlign: 'left' },
+
+    // Contenedor que permite el scroll horizontal
+    tableContainer: {
+        width: '100%',
+        overflowX: 'auto'
+    },
+    // Le damos un ancho mínimo a la tabla para garantizar que los botones respiren
+    table: {
+        width: '100%',
+        minWidth: '850px',
+        borderCollapse: 'collapse',
+        textAlign: 'left'
+    },
+
     th: { padding: '12px', color: '#666', borderBottom: '2px solid #222', fontSize: '13px', textTransform: 'uppercase' },
     td: { padding: '15px 12px', borderBottom: '1px solid #1a1a1a', color: '#ccc', fontSize: '14px' },
     tr: { transition: '0.2s' },
     badge: { padding: '4px 8px', borderRadius: '4px', fontSize: '11px', color: '#fff', fontWeight: 'bold' },
     status: { fontSize: '12px', fontWeight: 'bold' },
-    actions: { display: 'flex', gap: '8px' },
-    btnApprove: { backgroundColor: '#166534', color: '#4ade80', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
-    btnRestrict: { backgroundColor: '#854d0e', color: '#fde047', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
-    btnReject: { backgroundColor: '#7f1d1d', color: '#fca5a5', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
-    btnAdmin: { backgroundColor: '#1e1b4b', color: '#818cf8', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
+    actions: { display: 'flex', gap: '8px', alignItems: 'center' },
+    btnApprove: { backgroundColor: '#166534', color: '#4ade80', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' },
+    btnRestrict: { backgroundColor: '#854d0e', color: '#fde047', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' },
+    btnReject: { backgroundColor: '#7f1d1d', color: '#fca5a5', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' },
+    btnAdmin: { backgroundColor: '#1e1b4b', color: '#818cf8', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' },
 };
 
 export default UserManager;

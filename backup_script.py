@@ -115,10 +115,29 @@ def realizar_backup():
                 with open(ruta_cifrada, "wb") as file:
                     file.write(datos_cifrados)
                     
-                os.remove(backup_path) 
+                os.remove(backup_path) # Eliminamos el .backup en claro
                 
                 peso_mb = round(os.path.getsize(ruta_cifrada) / (1024 * 1024), 2)
                 print(f"[+] Éxito: Backup protegido y cifrado. Tamaño: {peso_mb} MB.")
+                
+                # === NUEVO: CÁLCULO DEL SELLO DE INTEGRIDAD (SHA-256) ===
+                import hashlib
+                print("[*] Calculando firma digital SHA-256 del activo...")
+                
+                sha256_hash = hashlib.sha256()
+                with open(ruta_cifrada, "rb") as file:
+                    # Leemos en bloques de 4KB para optimizar el uso de memoria RAM
+                    for byte_block in iter(lambda: file.read(4096), b""):
+                        sha256_hash.update(byte_block)
+                
+                checksum_final = sha256_hash.hexdigest()
+                
+                # Guardamos el hash en un archivo compañero .sha256
+                ruta_sha256 = ruta_cifrada + ".sha256"
+                with open(ruta_sha256, "w") as file_sha:
+                    file_sha.write(checksum_final)
+                    
+                print(f"[+] Sello de Integridad generado [SHA-256]: {checksum_final}")
                 
                 limpiar_backups_antiguos(dias_retencion=7)
                 
