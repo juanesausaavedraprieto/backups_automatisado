@@ -215,7 +215,31 @@ app.get('/api/admin/auditoria', verificarSuperAdmin, async (req, res) => {
         res.status(500).json({ error: 'Error al consultar logs de auditoría.' });
     }
 });
+// ENDPOINT: Descarga Segura "Off-Site" de Activos de la Bóveda
+app.get('/api/backups/download/:filename', verificarSuperAdmin, (req, res) => {
+    const filename = req.params.filename;
 
+    // Aseguramos la ruta exacta a tu bóveda
+    const rutaBackups = 'C:\\Users\\JUAN ESAU SAAVEDRA P\\OneDrive - Universidad Tecnologica del Peru\\doc\\MIS_PROYECTOS\\Gestion-TI\\backups';
+    const filepath = path.join(rutaBackups, filename);
+
+    // Medida de seguridad: Prevenir ataques de "Directory Traversal" (ej. ../../)
+    if (!filepath.startsWith(rutaBackups) || !fs.existsSync(filepath)) {
+        return res.status(404).json({ error: 'Activo de información no encontrado o acceso denegado.' });
+    }
+
+    // Registramos la descarga en el log de auditoría
+    registrarAuditoria(
+        req.usuario.email,
+        'DESCARGA_OFFSITE',
+        `Extracción segura del activo cifrado: ${filename}`,
+        'EXITO',
+        req.ip || req.socket.remoteAddress
+    );
+
+    // Transmitimos el archivo
+    res.download(filepath);
+});
 // Modificación de Políticas de IAM Auditada
 app.put('/api/admin/usuarios/:id', verificarSuperAdmin, async (req, res) => {
     const idUsuarioDestino = req.params.id;
@@ -397,5 +421,54 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => console.log('🔴 Operador desconectado'));
 });
+
+const rotarAuditoria = async () => {
+    try {
+        console.log('[*] Iniciando protocolo de rotación de auditoría (Retención: 15 días móviles)...');
+
+        // 1. Buscar registros que ya superaron los 15 días de antigüedad
+        const querySelect = `SELECT * FROM auditoria_eventos WHERE fecha < NOW() - INTERVAL '15 days' ORDER BY fecha ASC`;
+        const { rows } = await poolAuth.query(querySelect);
+
+        if (rows.length === 0) {
+            console.log('[*] Rotación de auditoría: No hay registros mayores a 15 días para archivar.');
+            return;
+        }
+
+        // 2. Formatear la data a formato CSV (Texto Plano ligero)
+        const cabeceras = "ID,Usuario_Email,Evento,Descripcion,Estado,IP_Cliente,Fecha\n";
+        const lineas = rows.map(r =>
+            // Limpiamos las comillas dobles en la descripción para evitar que se rompa el CSV
+            `${r.id},${r.usuario_email},${r.evento},"${r.descripcion.replace(/"/g, '""')}",${r.estado},${r.ip_cliente},${r.fecha.toISOString()}`
+        ).join("\n");
+
+        // 3. Guardar el archivo inmutable en la Bóveda de Archivos
+        // Usamos una marca de tiempo exacta para el nombre del archivo
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const nombreArchivo = `auditoria_historica_${timestamp}.csv`;
+        const rutaArchivo = path.join('C:\\Users\\JUAN ESAU SAAVEDRA P\\OneDrive - Universidad Tecnologica del Peru\\doc\\MIS_PROYECTOS\\Gestion-TI\\backups', nombreArchivo);
+
+        fs.writeFileSync(rutaArchivo, cabeceras + lineas, 'utf8');
+
+        // 4. Purgar los registros antiguos de la base de datos principal (Liberar espacio)
+        const queryDelete = `DELETE FROM auditoria_eventos WHERE fecha < NOW() - INTERVAL '15 days'`;
+        await poolAuth.query(queryDelete);
+
+        // 5. Registrar este evento en la tabla "limpia" para dejar constancia de la acción automática
+        await registrarAuditoria(
+            'Demonio_Cron_Interno',
+            'ROTACION_LOGS',
+            `Limpieza automática exitosa. Se archivaron ${rows.length} registros antiguos (>= 15 días) en el archivo off-site: ${nombreArchivo}.`,
+            'EXITO',
+            'localhost'
+        );
+
+        console.log(`[+] Éxito: Rotación completada y BD purgada. Archivo generado: ${nombreArchivo}`);
+    } catch (error) {
+        console.error('[-] Error crítico en la rotación de logs:', error.message);
+    }
+};
+
+cron.schedule('0 3 * * *', rotarAuditoria);
 
 server.listen(4000, () => console.log(`📡 Servidor ITIL API corriendo en http://localhost:4000`));

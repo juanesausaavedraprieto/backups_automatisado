@@ -13,7 +13,8 @@ import TableSelector from './components/TableSelector';
 import LiveProgress from './components/LiveProgress';
 import Auth from './components/Auth';
 import UserManager from './components/UserManager';
-import AuditTrail from './components/AuditTrail'; // <-- NUEVO COMPONENTE DE AUDITORÍA
+import AuditTrail from './components/AuditTrail';
+import SecurityModal from './components/SecurityModal'; // <-- MODAL IMPORTADO
 
 const App: React.FC = () => {
   // ==========================================
@@ -35,6 +36,9 @@ const App: React.FC = () => {
   const [metricas, setMetricas] = useState<MetricaTabla[]>([]);
   const [enEjecucion, setEnEjecucion] = useState<boolean>(false);
   const [archivosFisicos, setArchivosFisicos] = useState<ArchivoBackup[]>([]);
+
+  // Estado del Modal de Seguridad
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
 
   // Métricas operativas
   const [inicioProceso, setInicioProceso] = useState<number | null>(null);
@@ -110,14 +114,14 @@ const App: React.FC = () => {
   // ==========================================
   const manejarLoginExitoso = (nuevoToken: string, datosUsuario: any) => {
     localStorage.setItem('itil_token', nuevoToken);
-    localStorage.setItem('itil_usuario', JSON.stringify(datosUsuario)); 
+    localStorage.setItem('itil_usuario', JSON.stringify(datosUsuario));
     setToken(nuevoToken);
     setUsuario(datosUsuario);
   };
 
   const cerrarSesion = () => {
     localStorage.removeItem('itil_token');
-    localStorage.removeItem('itil_usuario'); 
+    localStorage.removeItem('itil_usuario');
     setToken(null);
     setUsuario(null);
     if (socket) socket.disconnect();
@@ -131,14 +135,19 @@ const App: React.FC = () => {
     socket.emit('iniciar_backup', tablasSeleccionadas);
   };
 
-  const iniciarRestauracion = (): void => {
+  // Novedad: Abre el modal en lugar de disparar la acción
+  const intentarRestauracion = (): void => {
     if (!socket) return;
-    if (window.confirm('⚠️ ALERTA DE INCIDENTE\n\n¿Estás seguro de restaurar?')) {
-      setEnEjecucion(true);
-      setLogs([]);
-      setInicioProceso(Date.now());
-      socket.emit('iniciar_restauracion');
-    }
+    setIsRestoreModalOpen(true);
+  };
+
+  // Novedad: Ejecuta la acción solo tras confirmar en el modal
+  const ejecutarRestauracionConfirmada = (): void => {
+    if (!socket) return;
+    setEnEjecucion(true);
+    setLogs([]);
+    setInicioProceso(Date.now());
+    socket.emit('iniciar_restauracion');
   };
 
   const totalTablasObjetivo = tablasSeleccionadas.length > 0
@@ -281,13 +290,26 @@ const App: React.FC = () => {
             <div style={styles.tabContainer}>
               <div style={styles.panelToolbar}>
                 <h3>Inyección Forzada del Core Logístico</h3>
-                <button style={{ ...styles.btnAction, backgroundColor: enEjecucion ? '#333' : '#ef4444', color: enEjecucion ? '#888' : '#fff' }} onClick={iniciarRestauracion} disabled={enEjecucion}>
+                <button
+                  style={{ ...styles.btnAction, backgroundColor: enEjecucion ? '#333' : '#ef4444', color: enEjecucion ? '#888' : '#fff' }}
+                  onClick={intentarRestauracion} /* <-- AHORA DISPARA EL MODAL */
+                  disabled={enEjecucion}
+                >
                   {enEjecucion ? '🔄 RESTAURANDO CORE...' : '🚨 INVOCAR RESTAURACIÓN'}
                 </button>
               </div>
               <div style={styles.alertNotice}>
                 <strong>ADVERTENCIA OPERATIVA:</strong> Esta acción detendrá temporalmente la escritura del servicio principal para descifrar el bloque AES-256 e inyectarlo en <code>db_universidad_restaurada</code>.
               </div>
+
+              {/* NUEVO MODAL DE SEGURIDAD PARA RESTAURACIÓN */}
+              <SecurityModal
+                isOpen={isRestoreModalOpen}
+                onClose={() => setIsRestoreModalOpen(false)}
+                onConfirm={ejecutarRestauracionConfirmada}
+                palabraClave="RESTAURAR"
+              />
+
               <TerminalVirtual logs={logs} />
             </div>
           )}
