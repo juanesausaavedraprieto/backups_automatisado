@@ -1,6 +1,0 @@
-ID,Usuario_Email,Evento,Descripcion,Estado,IP_Cliente,Fecha
-803864d6-358e-4a90-946c-743b48e840b2,Demonio_Cron_Interno,ROTACION_LOGS,"Limpieza automática exitosa. Se archivaron 17 registros antiguos (>= 15 días) en el archivo off-site: auditoria_historica_2026-06-12T23-42-56-777Z.csv.",EXITO,localhost,2026-06-12T23:42:56.782Z
-7b7aa4b1-5582-4ae2-92e1-9b7bb745f42e,admin@universidad.edu.pe,LOGIN,"Inicio de sesión exitoso. Token JWT emitido.",EXITO,::1,2026-06-17T23:27:18.760Z
-d5aecc44-044b-4789-a26b-75ddecb245e4,admin@universidad.edu.pe,LOGIN,"Inicio de sesión exitoso. Token JWT emitido.",EXITO,::1,2026-06-18T01:40:22.881Z
-f8e000e2-00d8-4471-bdb4-03b80797d8e3,admin@universidad.edu.pe,LOGIN,"Inicio de sesión exitoso. Token JWT emitido.",EXITO,::1,2026-06-18T01:47:12.698Z
-c461d510-13b9-44d0-8587-e5722aad145f,admin@universidad.edu.pe,LOGIN,"Inicio de sesión exitoso. Token JWT emitido.",EXITO,::1,2026-06-18T01:47:58.870Z
