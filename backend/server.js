@@ -1,3 +1,5 @@
+require('dotenv').config(); // <-- NUEVO: Inicializa la bóveda de variables de entorno
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -51,7 +53,8 @@ const registrarAuditoria = async (email, evento, descripcion, estado, ip = '127.
     }
 };
 
-const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1515025468892385545/0gUaWmVxl_bRy9FpEOJKSNFWSZIe_fIGzhiVOWm_gm1bZJMzsqP_Sa0XrXSjBn-ihIa_';
+// <-- NUEVO: Ahora lee la URL desde el archivo .env de forma segura
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 const enviarAlertaDiscord = async (evento, origen, operador, exito, detalles) => {
     if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL.includes('TU_WEBHOOK_AQUI')) return;
@@ -371,7 +374,7 @@ io.on('connection', (socket) => {
                         nombre: file,
                         pesoMB: (stats.size / (1024 * 1024)).toFixed(2),
                         fechaMs: stats.mtimeMs,
-                        checksum: checksum 
+                        checksum: checksum
                     };
                 }).sort((a, b) => b.fechaMs - a.fechaMs);
             socket.emit('historial_archivos', archivos);
